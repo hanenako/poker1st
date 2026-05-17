@@ -1,0 +1,340 @@
+// Prisma schema — poker1st
+// docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- Enums ----------
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum TournamentStatus {
+  UPCOMING
+  ONGOING
+  FINISHED
+  CANCELLED
+}
+
+enum TagCategory {
+  GAME      // NLH, PLO, PLO-5, Mixed
+  STRUCTURE // Normal, Hyper, Turbo, Deep, Bounty, Freezeout
+  FEATURE   // Re-entry, Add-on, Mystery, Satellite, ...
+}
+
+// ---------- Poker domain ----------
+
+model Brand {
+  id          Int          @id @default(autoincrement())
+  slug        String       @unique
+  name        String
+  nameKo      String?      @map("name_ko")
+  nameJa      String?      @map("name_ja")
+  logoUrl      String?      @map("logo_url")
+  websiteUrl   String?      @map("website_url")
+  twitterUrl   String?      @map("twitter_url")
+  instagramUrl String?      @map("instagram_url")
+  youtubeUrl   String?      @map("youtube_url")
+  flickrUrl    String?      @map("flickr_url")
+  countryCode   String?      @map("country_code") @db.Char(2)
+  description   String?
+  descriptionKo String?      @map("description_ko")
+  descriptionJa String?      @map("description_ja")
+  createdAt     DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt       @map("updated_at")
+
+  tournaments Tournament[]
+
+  @@map("brands")
+}
+
+model Tournament {
+  id              Int              @id @default(autoincrement())
+  brandId         Int              @map("brand_id")
+  slug            String           @unique
+  titleFull       String           @map("title_full")
+  titleShort      String           @map("title_short")
+  titleFullKo     String?          @map("title_full_ko")
+  titleFullJa     String?          @map("title_full_ja")
+  countryCode     String           @map("country_code") @db.Char(2)
+  city            String
+  venueName       String?          @map("venue_name")
+  venueAddress    String?          @map("venue_address")
+  venueLat        Decimal?         @map("venue_lat") @db.Decimal(9, 6)
+  venueLng        Decimal?         @map("venue_lng") @db.Decimal(9, 6)
+  startDate       DateTime         @map("start_date") @db.Date
+  endDate         DateTime         @map("end_date")   @db.Date
+  timezone        String           @default("Asia/Tokyo")
+  posterImageUrl  String?          @map("poster_image_url")
+  status          TournamentStatus @default(UPCOMING)
+  description     String?
+  descriptionKo   String?          @map("description_ko")
+  descriptionJa   String?          @map("description_ja")
+  playerGuides    Json?            @map("player_guides") // { "ja": "url", "ko": "url", "en": "url" }
+  publishedAt     DateTime?        @map("published_at")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt       @map("updated_at")
+
+  brand           Brand              @relation(fields: [brandId], references: [id])
+  events          Event[]
+  favoritedBy     Favorite[]
+  results         TournamentResult[]
+
+  @@index([brandId])
+  @@index([startDate])
+  @@index([status])
+  @@map("tournaments")
+}
+
+model Event {
+  id                Int        @id @default(autoincrement())
+  tournamentId      Int        @map("tournament_id")
+  orderNo           Int        @default(0) @map("order_no")
+  eventNo           Int?       @map("event_no")                // 공식 이벤트 번호 (Ev.1, Ev.5 등)
+  name              String
+  nameKo            String?    @map("name_ko")
+  date              DateTime   @db.Date
+  registrationStart String?    @map("registration_start") // "10:00" — 유연한 string 유지
+  registrationClose String?    @map("registration_close")
+  buyInAmount       Decimal?   @map("buy_in_amount") @db.Decimal(12, 2)
+  buyInCurrency     String     @default("JPY") @map("buy_in_currency") @db.Char(3)
+  buyInText         String?    @map("buy_in_text")           // 표시용 원본 ("¥30,000", "10K+1K")
+  startingStack     Int?       @map("starting_stack")
+  gtdAmount         Decimal?   @map("gtd_amount") @db.Decimal(15, 2)
+  gtdText           String?    @map("gtd_text")              // 표시용 ("¥10M")
+  gameType          String?    @map("game_type")             // NLH/PLO/PLO-5/Mixed — fast filter용 비정규화
+  structure         String?                                  // Normal/Hyper/Turbo/Bounty/Deep
+  reEntry           String?    @map("re_entry")              // "가능"/"Freeze-out"/"Unlimited"/"-"
+  nextDayPct        Decimal?   @map("next_day_pct") @db.Decimal(5, 4) // 0.15 = 15%
+  levelDuration     String?    @map("level_duration")        // "40" 또는 "40/30/25"
+  inPrize           Int?       @map("in_prize")              // 상금 지급 순위 수 (e.g. 10)
+  days              Json?                                   // 멀티데이 일정 [{ label, date, start, regClose? }]
+  description       String?
+  createdAt         DateTime   @default(now()) @map("created_at")
+  updatedAt         DateTime   @updatedAt       @map("updated_at")
+
+  tournament        Tournament       @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  tags              EventTag[]
+  results           TournamentResult[]
+  structureLevels   EventStructureLevel[]
+
+  @@index([tournamentId])
+  @@index([date])
+  @@map("events")
+}
+
+model EventStructureLevel {
+  id         Int     @id @default(autoincrement())
+  eventId    Int     @map("event_id")
+  level      Int
+  isBreak    Boolean @default(false) @map("is_break")
+  smallBlind Int     @default(0) @map("small_blind")
+  bigBlind   Int     @default(0) @map("big_blind")
+  bbAnte     Int?    @map("bb_ante")
+  minutes    Int
+
+  event      Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([eventId])
+  @@map("event_structure_level")
+}
+
+model Tag {
+  id       Int         @id @default(autoincrement())
+  slug     String      @unique
+  name     String
+  nameKo   String?     @map("name_ko")
+  category TagCategory
+
+  events   EventTag[]
+
+  @@index([category])
+  @@map("tags")
+}
+
+model EventTag {
+  eventId Int   @map("event_id")
+  tagId   Int   @map("tag_id")
+
+  event   Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  tag     Tag   @relation(fields: [tagId],   references: [id], onDelete: Cascade)
+
+  @@id([eventId, tagId])
+  @@index([tagId])
+  @@map("event_tags")
+}
+
+// ---------- Pubs ----------
+
+model Pub {
+  id             Int         @id @default(autoincrement())
+  slug           String      @unique
+  name           String
+  nameKo         String?     @map("name_ko")
+  nameJa         String?     @map("name_ja")
+  countryCode    String      @map("country_code") @db.Char(2)
+  city           String
+  district       String?
+  address        String?
+  addressKo      String?     @map("address_ko")
+  lat            Decimal?    @db.Decimal(9, 6)
+  lng            Decimal?    @db.Decimal(9, 6)
+  phone          String?
+  websiteUrl     String?     @map("website_url")
+  twitterUrl     String?     @map("twitter_url")
+  instagramUrl   String?     @map("instagram_url")
+  youtubeUrl     String?     @map("youtube_url")
+  flickrUrl      String?     @map("flickr_url")
+  nearestStation String?     @map("nearest_station")  // 가장 가까운 역 이름
+  walkMinutes    Int?        @map("walk_minutes")      // 역에서 도보 시간(분)
+  hours          Json?       // {"mon":["18:00-02:00"], "tue":[...], ...}
+  features       Json?       // {"smokingRoom":true,"englishOk":true,"games":[{type,info}],...}
+  videos         Json?       // [{url,title}]
+  coverImageUrl  String?     @map("cover_image_url")
+  notice         String?                              // 이번 주 특별 공지
+  noticeUntil    DateTime?   @map("notice_until") @db.Date // 공지 만료일 (이후 자동 숨김)
+  noticeImageUrl String?     @map("notice_image_url")      // 공지 이미지 URL
+  noticeUrl      String?     @map("notice_url")             // 공지 상세 링크
+  description    String?
+  descriptionKo  String?     @map("description_ko")
+  descriptionJa  String?     @map("description_ja")
+  publishedAt    DateTime?   @map("published_at")
+  createdAt      DateTime    @default(now()) @map("created_at")
+  updatedAt      DateTime    @updatedAt       @map("updated_at")
+
+  images              PubImage[]
+  reviews             PubReview[]
+  congestionReports   CongestionReport[]
+
+  @@index([city])
+  @@map("pubs")
+}
+
+model CongestionReport {
+  id        Int      @id @default(autoincrement())
+  pubId     Int      @map("pub_id")
+  status    String   // "QUIET" | "NORMAL" | "BUSY"
+  createdAt DateTime @default(now()) @map("created_at")
+
+  pub       Pub      @relation(fields: [pubId], references: [id], onDelete: Cascade)
+
+  @@index([pubId, createdAt])
+  @@map("congestion_reports")
+}
+
+model PubImage {
+  id       Int     @id @default(autoincrement())
+  pubId    Int     @map("pub_id")
+  url      String
+  caption  String?
+  orderNo  Int     @default(0) @map("order_no")
+
+  pub      Pub     @relation(fields: [pubId], references: [id], onDelete: Cascade)
+
+  @@index([pubId])
+  @@map("pub_images")
+}
+
+model PubReview {
+  id                Int      @id @default(autoincrement())
+  pubId             Int      @map("pub_id")
+  userId            Int?     @map("user_id")       // 어드민 연결용 (선택)
+  nickname          String?                         // 비로그인 작성자 닉네임
+  passwordHash      String?  @map("password_hash")  // 수정/삭제용 bcrypt 해시
+  ratingAtmosphere  Int?     @map("rating_atmosphere") // 분위기 1-5
+  ratingDealer      Int?     @map("rating_dealer")     // 딜러·스태프 1-5
+  ratingWait        Int?     @map("rating_wait")        // 대기시간 1-5
+  ratingValue       Int?     @map("rating_value")       // 가성비 1-5
+  title             String?
+  body              String?
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt       @map("updated_at")
+
+  pub               Pub      @relation(fields: [pubId],  references: [id], onDelete: Cascade)
+  user              User?    @relation(fields: [userId], references: [id])
+
+  @@index([pubId])
+  @@index([userId])
+  @@map("pub_reviews")
+}
+
+model TournamentResult {
+  id           Int        @id @default(autoincrement())
+  tournamentId Int        @map("tournament_id")
+  eventId      Int?       @map("event_id")
+  place        Int
+  playerName   String     @map("player_name")
+  playerNameKo String?    @map("player_name_ko")
+  country      String?
+  prize        Decimal?   @db.Decimal(15, 2)
+  prizeText    String?    @map("prize_text")
+  note         String?
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt       @map("updated_at")
+
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  event        Event?     @relation(fields: [eventId],      references: [id], onDelete: SetNull)
+
+  @@index([tournamentId])
+  @@index([eventId])
+  @@map("tournament_results")
+}
+
+// ---------- Users & CMS ----------
+
+model User {
+  id           Int         @id @default(autoincrement())
+  email        String      @unique
+  name         String?
+  passwordHash String?     @map("password_hash")
+  provider     String?     // "local" | "google" | "kakao" | ...
+  role         UserRole    @default(USER)
+  avatarUrl    String?     @map("avatar_url")
+  createdAt    DateTime    @default(now()) @map("created_at")
+  updatedAt    DateTime    @updatedAt       @map("updated_at")
+
+  reviews      PubReview[]
+  favorites    Favorite[]
+  notices      Notice[]
+
+  @@map("users")
+}
+
+model Favorite {
+  userId       Int        @map("user_id")
+  tournamentId Int        @map("tournament_id")
+  createdAt    DateTime   @default(now()) @map("created_at")
+
+  user         User       @relation(fields: [userId],       references: [id], onDelete: Cascade)
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+
+  @@id([userId, tournamentId])
+  @@index([tournamentId])
+  @@map("favorites")
+}
+
+model Notice {
+  id             Int       @id @default(autoincrement())
+  title          String
+  body           String
+  coverImageUrl  String?   @map("cover_image_url")
+  videoUrl       String?   @map("video_url")
+  pinned         Boolean   @default(false)
+  publishedAt    DateTime? @map("published_at")
+  authorId       Int?      @map("author_id")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt       @map("updated_at")
+
+  author      User?     @relation(fields: [authorId], references: [id])
+
+  @@index([publishedAt])
+  @@map("notices")
+}

@@ -1,0 +1,16 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: poker1st_db
+    environment:
+      POSTGRES_USER: poker
+      POSTGRES_PASSWORD: poker_dev
+      POSTGRES_DB: poker1st
+    ports:
+      - "15432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

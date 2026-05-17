@@ -1,0 +1,75 @@
+/**
+ * POST /api/admin/tournaments
+ * 새 대회 생성.
+ */
+import type { TournamentStatus } from '@prisma/client'
+
+type Body = {
+  brandId: number
+  slug: string
+  titleShort: string
+  titleFull: string
+  titleFullKo?: string
+  titleFullJa?: string
+  countryCode: string
+  city: string
+  timezone?: string
+  venueName?: string
+  venueAddress?: string
+  startDate: string
+  endDate: string
+  posterImageUrl?: string
+  status?: TournamentStatus
+  autoStatus?: boolean
+  description?: string
+  descriptionKo?: string
+  descriptionJa?: string
+  playerGuides?: { ja?: string; ko?: string; en?: string }
+  published?: boolean
+}
+
+function calcStatus(startDate: string, endDate: string): TournamentStatus {
+  const now   = new Date()
+  const start = new Date(startDate)
+  const end   = new Date(endDate)
+  end.setHours(23, 59, 59, 999)
+  if (now < start) return 'UPCOMING'
+  if (now > end)   return 'FINISHED'
+  return 'ONGOING'
+}
+
+export default defineEventHandler(async (event) => {
+  await requireAdmin(event)
+  const body = await readBody<Body>(event)
+
+  if (!body.brandId || !body.slug || !body.titleShort || !body.titleFull || !body.city || !body.startDate || !body.endDate) {
+    throw createError({ statusCode: 400, statusMessage: 'missing required fields' })
+  }
+
+  const tournament = await prisma.tournament.create({
+    data: {
+      brandId: body.brandId,
+      slug: body.slug,
+      titleShort: body.titleShort,
+      titleFull: body.titleFull,
+      titleFullKo: body.titleFullKo || null,
+      titleFullJa: body.titleFullJa || null,
+      countryCode: body.countryCode || 'JP',
+      city: body.city,
+      timezone: body.timezone || 'Asia/Tokyo',
+      venueName: body.venueName || null,
+      venueAddress: body.venueAddress || null,
+      startDate: new Date(body.startDate),
+      endDate: new Date(body.endDate),
+      posterImageUrl: body.posterImageUrl || null,
+      status: body.autoStatus ? calcStatus(body.startDate, body.endDate) : (body.status ?? 'UPCOMING'),
+      description: body.description || null,
+      descriptionKo: body.descriptionKo || null,
+      descriptionJa: body.descriptionJa || null,
+      playerGuides: body.playerGuides ?? undefined,
+      publishedAt: body.published ? new Date() : null
+    }
+  })
+
+  return tournament
+})
